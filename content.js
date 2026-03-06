@@ -218,6 +218,7 @@ function injectCSS(){
     ".sol-modo-btn{flex:1;padding:6px 0;border:none;border-radius:6px;font-family:'Inter',sans-serif;font-size:10.5px;font-weight:600;cursor:pointer;transition:all .18s;color:var(--t3);background:none;}",
     ".sol-modo-btn.active{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.35);}",
     ".sol-gemco-wrap{transition:all .18s;}",
+    ".sol-btn{width:100%;padding:11px;border-radius:8px;border:none;font-family:'Inter',sans-serif;font-weight:600;font-size:12.5px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;}",
     ".sol-btn-run{background:var(--blue);color:#fff;}.sol-btn-run:hover{background:#2563eb;}",
     ".sol-btn-stop{background:var(--redlt);border:1px solid rgba(239,68,68,.3);color:#fca5a5;display:none;}",
     ".sol-div{height:1px;background:var(--b1);margin:2px 0;}",
