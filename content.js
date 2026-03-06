@@ -449,35 +449,50 @@ async function start(){
     if(semGemco.length){await modal({tipo:'err',icone:'🔍',titulo:'Gemco ausente',mensagem:'As linhas abaixo estao sem Gemco:\n'+semGemco.map(j=>'Filial '+j.filial).join('\n'),btns:[{t:'Ok',v:'ok',cls:'p'}]});return;}
   }
 
-  const gemcoResumo=modoUnico?gemcoUnico:jobs.map(j=>j.gemco).filter((v,i,a)=>a.indexOf(v)===i).join(', ');
-  const preview=jobs.slice(0,5).map(function(j){return '- CD'+j.filial+' x'+j.qtd+(modoPorFilial?' ('+j.gemco+')':'');}).join('\n')+(jobs.length>5?'\n... e mais '+(jobs.length-5):'');
-  const conf=await modal({icone:'📤',tipo:'info',titulo:'Confirmar Solicitacoes',mensagem:'Gemco: '+gemcoResumo+'\nOrigem: CD'+norm(origin)+'\nFiliais ('+jobs.length+'):\n'+preview,btns:[{t:'Cancelar',v:'n',cls:'d'},{t:'Iniciar',v:'s',cls:'p'}]});
+  // Agrupa linhas por filial — filiais repetidas viram uma solicitacao com multiplos assets
+  const gruposMap={};
+  const gruposOrdem=[];
+  jobs.forEach(function(j){
+    const key=j.filialPad;
+    if(!gruposMap[key]){gruposMap[key]={filial:j.filial,filialPad:j.filialPad,assets:[]};gruposOrdem.push(key);}
+    const gemco=modoUnico?gemcoUnico:j.gemco;
+    const existing=gruposMap[key].assets.find(function(a){return a.itemCode===gemco;});
+    if(existing){existing.amount+=j.qtd;}
+    else{gruposMap[key].assets.push({itemCode:gemco,amount:j.qtd});}
+  });
+  const grupos=gruposOrdem.map(function(k){return gruposMap[k];});
+
+  const preview=grupos.slice(0,5).map(function(g){
+    return '- CD'+g.filial+': '+g.assets.map(function(a){return 'Gemco '+a.itemCode+' x'+a.amount;}).join(', ');
+  }).join('\n')+(grupos.length>5?'\n... e mais '+(grupos.length-5):'');
+  const agrupouLabel=grupos.length<jobs.length?' ('+jobs.length+' linhas -> '+grupos.length+' sols)':'';
+  const conf=await modal({icone:'📤',tipo:'info',titulo:'Confirmar Solicitacoes',mensagem:'Origem: CD'+norm(origin)+'\nSolicitacoes: '+grupos.length+agrupouLabel+'\n\n'+preview,btns:[{t:'Cancelar',v:'n',cls:'d'},{t:'Iniciar',v:'s',cls:'p'}]});
   if(conf!=='s')return;
 
   Object.assign(S,{running:true,stop:false,results:[],startTime:Date.now()});
   document.getElementById('sol-run').style.display='none';
   document.getElementById('sol-stop').style.display='flex';
-  setProg(5);log('Iniciando '+jobs.length+' solicitacoes - '+(modoUnico?'Gemco '+gemcoUnico:'Gemco por filial'),'info');
+  setProg(5);log('Iniciando '+grupos.length+' solicitacoes'+(agrupouLabel?' '+agrupouLabel:''),'info');
 
-  for(let i=0;i<jobs.length;i++){
+  for(let i=0;i<grupos.length;i++){
     if(S.stop)break;
-    const job=jobs[i];
-    const gemco=modoUnico?gemcoUnico:job.gemco;
-    setSt('Solicitacao '+(i+1)+'/'+jobs.length+' - Filial '+job.filial);
-    setProg(5+Math.round(i/jobs.length*88));
-    log('Filial '+job.filial+' x'+job.qtd+' Gemco '+gemco+'...','info');
+    const grupo=grupos[i];
+    const assetsDesc=grupo.assets.map(function(a){return a.itemCode+' x'+a.amount;}).join(' + ');
+    setSt('Solicitacao '+(i+1)+'/'+grupos.length+' - Filial '+grupo.filial);
+    setProg(5+Math.round(i/grupos.length*88));
+    log('Filial '+grupo.filial+' — '+assetsDesc+'...','info');
     try{
-      const criada=await req('POST','/v1/solicitations/branch',{origin:'',destiny:job.filialPad,receivingBranch:{code:'',complement:'',number:'',postalCode:'',publicPlace:''},observation:''});
+      const criada=await req('POST','/v1/solicitations/branch',{origin:'',destiny:grupo.filialPad,receivingBranch:{code:'',complement:'',number:'',postalCode:'',publicPlace:''},observation:''});
       if(!criada||!criada.solicitationId)throw new Error('API nao retornou solicitationId');
       const solId=criada.solicitationId;
-      await req('POST','/v1/solicitations/branch/'+solId+'/asset',{assets:[{itemCode:gemco,amount:job.qtd}]});
+      await req('POST','/v1/solicitations/branch/'+solId+'/asset',{assets:grupo.assets});
       await req('PATCH','/v1/solicitations/branch/'+solId,{observation:'',origin:origin,status:'CREATED'});
-      S.results.push({filial:job.filial,qtd:job.qtd,gemco:gemco,solId:solId,status:'ok'});
-      log('OK Filial '+job.filial+' - Sol #'+solId,'ok');
+      S.results.push({filial:grupo.filial,assets:grupo.assets,solId:solId,status:'ok'});
+      log('OK Filial '+grupo.filial+' - Sol #'+solId+' ('+grupo.assets.length+' item(s))','ok');
     }catch(e){
-      S.results.push({filial:job.filial,qtd:job.qtd,gemco:gemco,solId:null,status:'fail',motivo:e.message});
-      log('ERRO Filial '+job.filial+': '+e.message,'err');
-      const d=await modal({tipo:'err',titulo:'Erro - Filial '+job.filial,mensagem:e.message+'\n\nO que deseja fazer?',btns:[{t:'Parar',v:'stop',cls:'d'},{t:'Pular',v:'skip',cls:'s'},{t:'Tentar novamente',v:'retry',cls:'p'}]});
+      S.results.push({filial:grupo.filial,assets:grupo.assets,solId:null,status:'fail',motivo:e.message});
+      log('ERRO Filial '+grupo.filial+': '+e.message,'err');
+      const d=await modal({tipo:'err',titulo:'Erro - Filial '+grupo.filial,mensagem:e.message+'\n\nO que deseja fazer?',btns:[{t:'Parar',v:'stop',cls:'d'},{t:'Pular',v:'skip',cls:'s'},{t:'Tentar novamente',v:'retry',cls:'p'}]});
       if(d==='stop'){S.stop=true;break;}
       if(d==='retry'){i--;continue;}
     }
@@ -495,33 +510,34 @@ async function start(){
 async function modalResultado(gemcoUnico,origin,modoPorFilial){
   const oks=S.results.filter(function(r){return r.status==='ok';});
   const fails=S.results.filter(function(r){return r.status==='fail';});
-  const mostrarGemcoCol=modoPorFilial;
-  const thGemco=mostrarGemcoCol?'<th>Gemco</th>':'';
-  let tab='<table class="aa-rtable"><thead><tr><th>Filial</th><th>Qtd</th>'+thGemco+'<th>Sol.</th><th>Status</th></tr></thead><tbody>';
+  let tab='<table class="aa-rtable"><thead><tr><th>Filial</th><th>Itens</th><th>Sol.</th><th>Status</th></tr></thead><tbody>';
   [...oks,...fails].forEach(function(r){
-    const tdGemco=mostrarGemcoCol?'<td style="font-size:10px">'+r.gemco+'</td>':'';
-    tab+='<tr class="'+(r.status==='ok'?'ok':'fail')+'"><td><strong>'+r.filial+'</strong></td><td>x'+r.qtd+'</td>'+tdGemco+'<td style="font-size:10px">'+(r.solId||'-')+'</td><td>'+(r.status==='ok'?'<span class="tag-ok">OK</span>':'<span class="tag-fail">Falhou</span>')+'</td></tr>';
-    if(r.status==='fail')tab+='<tr class="fail"><td colspan="'+(mostrarGemcoCol?5:4)+'" style="font-size:9.5px;color:#fca5a5;padding:2px 8px 6px">'+r.motivo+'</td></tr>';
+    const itensDesc=r.assets.map(function(a){return '<span style="font-size:9.5px;color:var(--t2)">'+a.itemCode+' x'+a.amount+'</span>';}).join('<br>');
+    tab+='<tr class="'+(r.status==='ok'?'ok':'fail')+'"><td><strong>'+r.filial+'</strong></td><td>'+itensDesc+'</td><td style="font-size:10px">'+(r.solId||'-')+'</td><td>'+(r.status==='ok'?'<span class="tag-ok">OK</span>':'<span class="tag-fail">Falhou</span>')+'</td></tr>';
+    if(r.status==='fail')tab+='<tr class="fail"><td colspan="4" style="font-size:9.5px;color:#fca5a5;padding:2px 8px 6px">'+r.motivo+'</td></tr>';
   });
   tab+='</tbody></table>';
-  const gemcoResumoLabel=modoPorFilial?'(por filial)':gemcoUnico;
+  const gemcoLabel=modoPorFilial?'(por filial)':gemcoUnico;
   const v=await modal({
     icone:fails.length===0?'🎉':'⚠️',
     titulo:fails.length===0?'Todas criadas!':'Concluido com erros',
     tipo:fails.length===0?'ok':'warn',
     wide:'aa-res-modal',
     html:'<div class="aa-res-sum">'+
-      '<div class="aa-res-cell"><div class="aa-res-val" style="color:#93c5fd">'+S.results.length+'</div><div class="aa-res-lbl">Total</div></div>'+
+      '<div class="aa-res-cell"><div class="aa-res-val" style="color:#93c5fd">'+S.results.length+'</div><div class="aa-res-lbl">Solicitacoes</div></div>'+
       '<div class="aa-res-cell"><div class="aa-res-val" style="color:var(--green)">'+oks.length+'</div><div class="aa-res-lbl">OK</div></div>'+
       '<div class="aa-res-cell"><div class="aa-res-val" style="color:'+(fails.length?'var(--red)':'var(--green)')+'">'+fails.length+'</div><div class="aa-res-lbl">Falhas</div></div>'+
       '</div>'+
-      '<div style="font-size:10.5px;color:var(--t3);text-align:center;margin-bottom:10px">Gemco: '+gemcoResumoLabel+' - Origem: CD'+norm(origin)+'</div>'+
-      '<div style="max-height:200px;overflow-y:auto;border:1px solid var(--b1);border-radius:8px;margin-bottom:12px;">'+tab+'</div>',
+      '<div style="font-size:10.5px;color:var(--t3);text-align:center;margin-bottom:10px">Gemco: '+gemcoLabel+' | Origem: CD'+norm(origin)+'</div>'+
+      '<div style="max-height:220px;overflow-y:auto;border:1px solid var(--b1);border-radius:8px;margin-bottom:12px;">'+tab+'</div>',
     btns:[{t:'Copiar',v:'copy',cls:'s'},{t:'Fechar',v:'close',cls:'p'}]
   });
   if(v==='copy'){
-    const lines=['SOLICITACOES - '+new Date().toLocaleString('pt-BR'),'Gemco: '+gemcoResumoLabel+' Origem: CD'+norm(origin),'Total: '+S.results.length+' OK: '+oks.length+' Falhas: '+fails.length,''];
-    S.results.forEach(function(r){lines.push(r.status==='ok'?'OK '+r.filial+' x'+r.qtd+' Gemco:'+r.gemco+' Sol#'+r.solId:'ERRO '+r.filial+' x'+r.qtd+' Gemco:'+r.gemco+' '+r.motivo);});
+    const lines=['SOLICITACOES - '+new Date().toLocaleString('pt-BR'),'Gemco: '+gemcoLabel+' | Origem: CD'+norm(origin),'Total: '+S.results.length+' | OK: '+oks.length+' | Falhas: '+fails.length,''];
+    S.results.forEach(function(r){
+      const itens=r.assets.map(function(a){return a.itemCode+' x'+a.amount;}).join(', ');
+      lines.push(r.status==='ok'?'OK Filial '+r.filial+' ['+itens+'] Sol#'+r.solId:'ERRO Filial '+r.filial+' ['+itens+'] '+r.motivo);
+    });
     navigator.clipboard.writeText(lines.join('\n'));
   }
 }
