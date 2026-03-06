@@ -214,7 +214,10 @@ function injectCSS(){
     ".sol-sa{position:absolute;right:9px;top:50%;transform:translateY(-50%);pointer-events:none;color:var(--t3);font-size:10px;}",
     ".sol-inp{flex:1;background:var(--s2);border:1px solid var(--b1);border-radius:7px;color:var(--t1);font-size:12px;font-family:'JetBrains Mono',monospace;padding:9px 10px;box-sizing:border-box;outline:none;}",
     ".sol-inp:focus{border-color:rgba(59,130,246,.5);}.sol-inp::placeholder{color:var(--t3);}",
-    ".sol-btn{width:100%;padding:11px;border-radius:8px;border:none;font-family:'Inter',sans-serif;font-weight:600;font-size:12.5px;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:7px;}",
+    ".sol-modo{display:flex;background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:3px;gap:3px;margin-bottom:10px;}",
+    ".sol-modo-btn{flex:1;padding:6px 0;border:none;border-radius:6px;font-family:'Inter',sans-serif;font-size:10.5px;font-weight:600;cursor:pointer;transition:all .18s;color:var(--t3);background:none;}",
+    ".sol-modo-btn.active{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(59,130,246,.35);}",
+    ".sol-gemco-wrap{transition:all .18s;}",
     ".sol-btn-run{background:var(--blue);color:#fff;}.sol-btn-run:hover{background:#2563eb;}",
     ".sol-btn-stop{background:var(--redlt);border:1px solid rgba(239,68,68,.3);color:#fca5a5;display:none;}",
     ".sol-div{height:1px;background:var(--b1);margin:2px 0;}",
@@ -269,7 +272,7 @@ function buildPanel(){
     '<div class="solh">' +
       '<div class="solh-l">' +
         '<div class="solh-ico">\u{1F4E4}</div>' +
-        '<div><div class="solh-title">Solicitar Ativos</div><div class="solh-sub">v1 \u00B7 MAGALU</div></div>' +
+        '<div><div class="solh-title">Solicitar Ativos</div><div class="solh-sub">v2 \u00B7 MAGALU</div></div>' +
       '</div>' +
       '<div class="solh-btns">' +
         '<button class="solh-btn" id="sol-min">\u2212</button>' +
@@ -279,13 +282,18 @@ function buildPanel(){
     '<div class="sol-tok w" id="sol-tok"><div class="sol-tok-dot"></div><span id="sol-tok-txt">Aguardando token...</span></div>' +
     '<div class="sols">' +
       '<div class="sol-card">' +
+        '<div class="sol-card-label">Modo de execucao</div>' +
+        '<div class="sol-modo">' +
+          '<button class="sol-modo-btn active" id="sol-modo-unico">Gemco \u00DAnico</button>' +
+          '<button class="sol-modo-btn" id="sol-modo-filial">Gemco por Filial</button>' +
+        '</div>' +
         '<div class="sol-card-label">Filiais de destino + quantidade</div>' +
-        '<textarea class="sol-ta" id="sol-ta" rows="6" placeholder="550 x1\n350 x2\n123 x3"></textarea>' +
-        '<div class="sol-hints"><span class="sol-hint">550 x1</span><span class="sol-hint">350 x2</span><span class="sol-hint">123 x5</span></div>' +
+        '<textarea class="sol-ta" id="sol-ta" rows="6" placeholder="550 1\n350 2\n123 3"></textarea>' +
+        '<div class="sol-hints" id="sol-hints"><span class="sol-hint">550 1</span><span class="sol-hint">350 2</span><span class="sol-hint">123 5</span></div>' +
       '</div>' +
       '<div class="sol-card">' +
         '<div class="sol-card-label">Configuracao</div>' +
-        '<div class="sol-row"><input class="sol-inp" id="sol-gemco" placeholder="Gemco (ex: 2936932)"/></div>' +
+        '<div class="sol-gemco-wrap" id="sol-gemco-wrap"><div class="sol-row"><input class="sol-inp" id="sol-gemco" placeholder="Gemco (ex: 2936932)"/></div></div>' +
         '<div class="sol-row">' +
           '<div class="sol-sel-wrap">' +
             '<select class="sol-sel" id="sol-origin"><option value="0038">Origem: CD38</option><option value="0991">Origem: CD991</option></select>' +
@@ -322,6 +330,25 @@ function buildPanel(){
     root.style.height=mini?'52px':'100vh';setM(mini?'0':'340px');
     document.getElementById('sol-min').textContent=mini?'\u25A1':'\u2212';
   };
+
+  // Toggle de modo
+  function setModo(unico){
+    document.getElementById('sol-modo-unico').classList.toggle('active',unico);
+    document.getElementById('sol-modo-filial').classList.toggle('active',!unico);
+    const gemcoWrap=document.getElementById('sol-gemco-wrap');
+    gemcoWrap.style.display=unico?'':'none';
+    const ta=document.getElementById('sol-ta');
+    const hints=document.getElementById('sol-hints');
+    if(unico){
+      ta.placeholder='550 1\n350 2\n123 3';
+      hints.innerHTML='<span class="sol-hint">550 1</span><span class="sol-hint">350 2</span><span class="sol-hint">123 5</span>';
+    } else {
+      ta.placeholder='550 1 2936932\n350 2 1234567\n123 3 9876543';
+      hints.innerHTML='<span class="sol-hint">550 1 2936932</span><span class="sol-hint">350 2 1234567</span>';
+    }
+  }
+  document.getElementById('sol-modo-unico').onclick=()=>setModo(true);
+  document.getElementById('sol-modo-filial').onclick=()=>setModo(false);
 
   document.getElementById('sol-run').onclick=start;
   document.getElementById('sol-stop').onclick=()=>{S.stop=true;setSt('Parando...');log('Interrompido.','warn');};
@@ -374,53 +401,80 @@ function modal(cfg){
   });
 }
 
-function parseFiliais(text){
+function parseFiliais(text,modoGemcoPorFilial){
   const result=[];
   text.split('\n').forEach(function(line){
-    line=line.trim();if(!line)return;
-    let m=line.match(/^(\d+)\s*[xX]\s*(\d+)$/);
-    if(m){result.push({filial:m[1],filialPad:pad(m[1]),qtd:parseInt(m[2])});return;}
-    m=line.match(/^(\d+)$/);
-    if(m){result.push({filial:m[1],filialPad:pad(m[1]),qtd:1});}
+    line=line.trim();if(!line||line.startsWith('#'))return;
+    if(modoGemcoPorFilial){
+      // Formato esperado: FILIAL QTD GEMCO
+      const m=line.match(/^(\d+)\s+(\d+)\s+(\d+)$/);
+      if(m){result.push({filial:m[1],filialPad:pad(m[1]),qtd:parseInt(m[2]),gemco:m[3]});return;}
+      // Aceita também com qtd=1 implícita: FILIAL GEMCO (2 tokens onde 2º tem 5+ dígitos)
+      const m2=line.match(/^(\d+)\s+(\d{5,})$/);
+      if(m2){result.push({filial:m2[1],filialPad:pad(m2[1]),qtd:1,gemco:m2[2]});return;}
+    } else {
+      // Formato: FILIAL QTD  (sem x)
+      const m=line.match(/^(\d+)\s+(\d+)$/);
+      if(m){result.push({filial:m[1],filialPad:pad(m[1]),qtd:parseInt(m[2])});return;}
+      // Só filial (qtd=1)
+      const m2=line.match(/^(\d+)$/);
+      if(m2){result.push({filial:m2[1],filialPad:pad(m2[1]),qtd:1});}
+    }
   });
   return result;
 }
 
 async function start(){
   const raw=document.getElementById('sol-ta').value||'';
-  const gemco=(document.getElementById('sol-gemco').value||'').trim();
   const origin=document.getElementById('sol-origin').value||'0038';
-  const jobs=parseFiliais(raw);
+  const modoUnico=document.getElementById('sol-modo-unico').classList.contains('active');
+  const modoPorFilial=!modoUnico;
+
+  const jobs=parseFiliais(raw,modoPorFilial);
+
+  let gemcoUnico='';
+  if(modoUnico){
+    gemcoUnico=(document.getElementById('sol-gemco').value||'').trim();
+    if(!gemcoUnico){await modal({tipo:'err',icone:'🔍',titulo:'Gemco nao informado',mensagem:'Informe o codigo Gemco do produto.',btns:[{t:'Ok',v:'ok',cls:'p'}]});return;}
+  }
 
   if(!getTok()){await modal({tipo:'err',icone:'🔐',titulo:'Token nao capturado',mensagem:'Faca qualquer acao no site primeiro.',btns:[{t:'Ok',v:'ok',cls:'p'}]});return;}
-  if(!jobs.length){await modal({tipo:'err',icone:'📝',titulo:'Nenhuma filial',mensagem:'Informe ao menos uma filial:\n550 x1\n350 x2',btns:[{t:'Ok',v:'ok',cls:'p'}]});return;}
-  if(!gemco){await modal({tipo:'err',icone:'🔍',titulo:'Gemco nao informado',mensagem:'Informe o codigo Gemco do produto.',btns:[{t:'Ok',v:'ok',cls:'p'}]});return;}
+  if(!jobs.length){
+    const exemplo=modoPorFilial?'550 1 2936932\n350 2 1234567':'550 1\n350 2';
+    await modal({tipo:'err',icone:'📝',titulo:'Nenhuma filial',mensagem:'Informe ao menos uma filial:\n'+exemplo,btns:[{t:'Ok',v:'ok',cls:'p'}]});return;
+  }
+  if(modoPorFilial){
+    const semGemco=jobs.filter(j=>!j.gemco);
+    if(semGemco.length){await modal({tipo:'err',icone:'🔍',titulo:'Gemco ausente',mensagem:'As linhas abaixo estao sem Gemco:\n'+semGemco.map(j=>'Filial '+j.filial).join('\n'),btns:[{t:'Ok',v:'ok',cls:'p'}]});return;}
+  }
 
-  const preview=jobs.slice(0,5).map(function(j){return '- CD'+j.filial+' x'+j.qtd;}).join('\n')+(jobs.length>5?'\n... e mais '+(jobs.length-5):'');
-  const conf=await modal({icone:'📤',tipo:'info',titulo:'Confirmar Solicitacoes',mensagem:'Gemco: '+gemco+'\nOrigem: CD'+norm(origin)+'\nFiliais ('+jobs.length+'):\n'+preview,btns:[{t:'Cancelar',v:'n',cls:'d'},{t:'Iniciar',v:'s',cls:'p'}]});
+  const gemcoResumo=modoUnico?gemcoUnico:jobs.map(j=>j.gemco).filter((v,i,a)=>a.indexOf(v)===i).join(', ');
+  const preview=jobs.slice(0,5).map(function(j){return '- CD'+j.filial+' x'+j.qtd+(modoPorFilial?' ('+j.gemco+')':'');}).join('\n')+(jobs.length>5?'\n... e mais '+(jobs.length-5):'');
+  const conf=await modal({icone:'📤',tipo:'info',titulo:'Confirmar Solicitacoes',mensagem:'Gemco: '+gemcoResumo+'\nOrigem: CD'+norm(origin)+'\nFiliais ('+jobs.length+'):\n'+preview,btns:[{t:'Cancelar',v:'n',cls:'d'},{t:'Iniciar',v:'s',cls:'p'}]});
   if(conf!=='s')return;
 
   Object.assign(S,{running:true,stop:false,results:[],startTime:Date.now()});
   document.getElementById('sol-run').style.display='none';
   document.getElementById('sol-stop').style.display='flex';
-  setProg(5);log('Iniciando '+jobs.length+' solicitacoes - Gemco '+gemco,'info');
+  setProg(5);log('Iniciando '+jobs.length+' solicitacoes - '+(modoUnico?'Gemco '+gemcoUnico:'Gemco por filial'),'info');
 
   for(let i=0;i<jobs.length;i++){
     if(S.stop)break;
     const job=jobs[i];
+    const gemco=modoUnico?gemcoUnico:job.gemco;
     setSt('Solicitacao '+(i+1)+'/'+jobs.length+' - Filial '+job.filial);
     setProg(5+Math.round(i/jobs.length*88));
-    log('Filial '+job.filial+' x'+job.qtd+'...','info');
+    log('Filial '+job.filial+' x'+job.qtd+' Gemco '+gemco+'...','info');
     try{
       const criada=await req('POST','/v1/solicitations/branch',{origin:'',destiny:job.filialPad,receivingBranch:{code:'',complement:'',number:'',postalCode:'',publicPlace:''},observation:''});
       if(!criada||!criada.solicitationId)throw new Error('API nao retornou solicitationId');
       const solId=criada.solicitationId;
       await req('POST','/v1/solicitations/branch/'+solId+'/asset',{assets:[{itemCode:gemco,amount:job.qtd}]});
       await req('PATCH','/v1/solicitations/branch/'+solId,{observation:'',origin:origin,status:'CREATED'});
-      S.results.push({filial:job.filial,qtd:job.qtd,solId:solId,status:'ok'});
+      S.results.push({filial:job.filial,qtd:job.qtd,gemco:gemco,solId:solId,status:'ok'});
       log('OK Filial '+job.filial+' - Sol #'+solId,'ok');
     }catch(e){
-      S.results.push({filial:job.filial,qtd:job.qtd,solId:null,status:'fail',motivo:e.message});
+      S.results.push({filial:job.filial,qtd:job.qtd,gemco:gemco,solId:null,status:'fail',motivo:e.message});
       log('ERRO Filial '+job.filial+': '+e.message,'err');
       const d=await modal({tipo:'err',titulo:'Erro - Filial '+job.filial,mensagem:e.message+'\n\nO que deseja fazer?',btns:[{t:'Parar',v:'stop',cls:'d'},{t:'Pular',v:'skip',cls:'s'},{t:'Tentar novamente',v:'retry',cls:'p'}]});
       if(d==='stop'){S.stop=true;break;}
@@ -434,18 +488,22 @@ async function start(){
   document.getElementById('sol-stop').style.display='none';
   setProg(100);setTimeout(function(){setProg(null);},600);
   setSt(S.stop?'Interrompido.':'Processo finalizado!',false);
-  await modalResultado(gemco,origin);
+  await modalResultado(gemcoUnico,origin,modoPorFilial);
 }
 
-async function modalResultado(gemco,origin){
+async function modalResultado(gemcoUnico,origin,modoPorFilial){
   const oks=S.results.filter(function(r){return r.status==='ok';});
   const fails=S.results.filter(function(r){return r.status==='fail';});
-  let tab='<table class="aa-rtable"><thead><tr><th>Filial</th><th>Qtd</th><th>Sol.</th><th>Status</th></tr></thead><tbody>';
+  const mostrarGemcoCol=modoPorFilial;
+  const thGemco=mostrarGemcoCol?'<th>Gemco</th>':'';
+  let tab='<table class="aa-rtable"><thead><tr><th>Filial</th><th>Qtd</th>'+thGemco+'<th>Sol.</th><th>Status</th></tr></thead><tbody>';
   [...oks,...fails].forEach(function(r){
-    tab+='<tr class="'+(r.status==='ok'?'ok':'fail')+'"><td><strong>'+r.filial+'</strong></td><td>x'+r.qtd+'</td><td style="font-size:10px">'+(r.solId||'-')+'</td><td>'+(r.status==='ok'?'<span class="tag-ok">OK</span>':'<span class="tag-fail">Falhou</span>')+'</td></tr>';
-    if(r.status==='fail')tab+='<tr class="fail"><td colspan="4" style="font-size:9.5px;color:#fca5a5;padding:2px 8px 6px">'+r.motivo+'</td></tr>';
+    const tdGemco=mostrarGemcoCol?'<td style="font-size:10px">'+r.gemco+'</td>':'';
+    tab+='<tr class="'+(r.status==='ok'?'ok':'fail')+'"><td><strong>'+r.filial+'</strong></td><td>x'+r.qtd+'</td>'+tdGemco+'<td style="font-size:10px">'+(r.solId||'-')+'</td><td>'+(r.status==='ok'?'<span class="tag-ok">OK</span>':'<span class="tag-fail">Falhou</span>')+'</td></tr>';
+    if(r.status==='fail')tab+='<tr class="fail"><td colspan="'+(mostrarGemcoCol?5:4)+'" style="font-size:9.5px;color:#fca5a5;padding:2px 8px 6px">'+r.motivo+'</td></tr>';
   });
   tab+='</tbody></table>';
+  const gemcoResumoLabel=modoPorFilial?'(por filial)':gemcoUnico;
   const v=await modal({
     icone:fails.length===0?'🎉':'⚠️',
     titulo:fails.length===0?'Todas criadas!':'Concluido com erros',
@@ -456,13 +514,13 @@ async function modalResultado(gemco,origin){
       '<div class="aa-res-cell"><div class="aa-res-val" style="color:var(--green)">'+oks.length+'</div><div class="aa-res-lbl">OK</div></div>'+
       '<div class="aa-res-cell"><div class="aa-res-val" style="color:'+(fails.length?'var(--red)':'var(--green)')+'">'+fails.length+'</div><div class="aa-res-lbl">Falhas</div></div>'+
       '</div>'+
-      '<div style="font-size:10.5px;color:var(--t3);text-align:center;margin-bottom:10px">Gemco: '+gemco+' - Origem: CD'+norm(origin)+'</div>'+
+      '<div style="font-size:10.5px;color:var(--t3);text-align:center;margin-bottom:10px">Gemco: '+gemcoResumoLabel+' - Origem: CD'+norm(origin)+'</div>'+
       '<div style="max-height:200px;overflow-y:auto;border:1px solid var(--b1);border-radius:8px;margin-bottom:12px;">'+tab+'</div>',
     btns:[{t:'Copiar',v:'copy',cls:'s'},{t:'Fechar',v:'close',cls:'p'}]
   });
   if(v==='copy'){
-    const lines=['SOLICITACOES - '+new Date().toLocaleString('pt-BR'),'Gemco: '+gemco+' Origem: CD'+norm(origin),'Total: '+S.results.length+' OK: '+oks.length+' Falhas: '+fails.length,''];
-    S.results.forEach(function(r){lines.push(r.status==='ok'?'OK '+r.filial+' x'+r.qtd+' Sol#'+r.solId:'ERRO '+r.filial+' x'+r.qtd+' '+r.motivo);});
+    const lines=['SOLICITACOES - '+new Date().toLocaleString('pt-BR'),'Gemco: '+gemcoResumoLabel+' Origem: CD'+norm(origin),'Total: '+S.results.length+' OK: '+oks.length+' Falhas: '+fails.length,''];
+    S.results.forEach(function(r){lines.push(r.status==='ok'?'OK '+r.filial+' x'+r.qtd+' Gemco:'+r.gemco+' Sol#'+r.solId:'ERRO '+r.filial+' x'+r.qtd+' Gemco:'+r.gemco+' '+r.motivo);});
     navigator.clipboard.writeText(lines.join('\n'));
   }
 }
